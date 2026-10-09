@@ -1,0 +1,158 @@
+:root {
+  /* Brand palette: deep teal + warm sand */
+  --teal-950: #0b2a3a;
+  --teal-900: #103a50;
+  --teal-800: #164a65;
+  --teal-700: #1d5470;
+  --teal-600: #256b8d;
+  --sand-200: #efe9d8;
+  --sand-300: #ddd4b6;
+  --sand-400: #c9bf9e;
+  --sand-500: #b3a77f;
+  --rose-500: #d64545;
+
+  --bg: #f3efe2;
+  --surface: #fffdf8;
+  --text: #11303f;
+  --text-muted: #5d6f77;
+  --border: #e0d8c2;
+  --input-bg: #faf8f1;
+  --accent: var(--teal-700);
+  --focus-ring: rgba(29, 84, 112, 0.22);
+
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b2230;
+    --surface: #10303f;
+    --text: #eef1ec;
+    --text-muted: #9db2b9;
+    --border: #1e4658;
+    --input-bg: #0c2734;
+    --accent: var(--sand-400);
+    --focus-ring: rgba(201, 191, 158, 0.25);
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+/* Placeholder dashboard */
+.placeholder-page {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+.placeholder-card {
+  max-width: 440px;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px;
+  text-align: center;
+}
+.placeholder-card h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin: 10px 0 8px;
+}
+.placeholder-card p {
+  color: var(--text-muted);
+  margin: 0 0 24px;
+}
+.placeholder-card .eyebrow {
+  font-size: 13px;
+  color: var(--accent);
+}
+.btn-secondary {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  padding: 10px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.btn-secondary:hover {
+  border-color: var(--accent);
+}
+
+/* Brand lockup */
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.logo svg {
+  flex-shrink: 0;
+  border-radius: 12px;
+}
+.logo-light svg {
+  box-shadow: 0 8px 24px -6px rgba(201, 191, 158, 0.35);
+}
+.logo-dark svg {
+  box-shadow: 0 8px 20px -8px rgba(29, 84, 112, 0.5);
+}
+.logo-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+.logo-name {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.logo-name em {
+  font-style: italic;
+  font-weight: 500;
+}
+.logo-tagline {
+  margin-top: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.logo-light .logo-name { color: #f4f1e6; }
+.logo-light .logo-name em { color: var(--sand-400); }
+.logo-light .logo-tagline { color: rgba(201, 191, 158, 0.75); }
+.logo-dark .logo-name { color: var(--text); }
+.logo-dark .logo-name em { color: var(--accent); }
+.logo-dark .logo-tagline { color: var(--text-muted); }
+
+/* Edge/IE add their own reveal & clear buttons to password fields; we provide our own toggle. */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}

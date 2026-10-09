@@ -1,0 +1,29 @@
+{
+  "name": "knowledge-nest",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n web,api -c cyan,yellow \"vite\" \"npm --prefix server run dev\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "dev:web": "vite",
+    "seed": "npm --prefix server run seed",
+    "start": "vite build && npm --prefix server start",
+    "test": "npm --prefix server test",
+    "backup": "npm --prefix server run backup",
+    "reset-admin": "npm --prefix server run reset-admin"
+  },
+  "dependencies": {
+    "jspdf": "^4.2.1",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^10.0.5",
+    "vite": "^7.0.0"
+  }
+}

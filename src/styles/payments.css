@@ -1,0 +1,841 @@
+/* ============ Payments ============ */
+:root {
+  --money-green: #2f7d62;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --money-green: #6cc6a1;
+  }
+}
+
+/* ---- Inputs ---- */
+.amount-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.amount-input > span {
+  position: absolute;
+  left: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.amount-input .input {
+  padding-left: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.amount-fixed .input {
+  background: color-mix(in srgb, var(--text-muted) 8%, var(--surface));
+  border-style: dashed;
+  color: var(--text);
+  cursor: default;
+}
+.amount-fixed .input:focus {
+  border-color: var(--border);
+  box-shadow: none;
+}
+.amount-input-lg .input {
+  height: 52px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  padding-left: 32px;
+}
+.amount-input-lg > span {
+  font-size: 20px;
+}
+
+.method-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 6px;
+}
+.method-picker label {
+  display: grid;
+  place-items: center;
+  height: 38px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: var(--input-bg);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.method-picker label:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+.method-picker label.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  font-weight: 600;
+}
+.method-picker label:focus-within {
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+.method-picker input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---- Fee box in booking dialogs ---- */
+.fee-box {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--sand-400) 14%, var(--surface));
+}
+.fee-row {
+  display: grid;
+  grid-template-columns: 1fr 160px;
+  align-items: center;
+  gap: 12px;
+}
+.fee-row .form-field,
+.form-label {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.fee-hint {
+  margin: -4px 0 0;
+}
+.collect-toggle {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-weight: 500;
+}
+.collect-fields {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+/* ---- Collect dialog ---- */
+.balance-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.balance-strip > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+}
+.balance-strip > div + div {
+  border-left: 1px solid var(--border);
+}
+.balance-strip span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.balance-strip strong {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.balance-strip .is-due {
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+.balance-strip .is-due strong {
+  color: var(--warn);
+}
+.balance-strip .is-clear strong {
+  color: var(--money-green);
+}
+
+/* ---- Receipt ---- */
+.receipt {
+  position: relative;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px dashed var(--border);
+  background: var(--input-bg);
+}
+.receipt-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.receipt-head svg {
+  border-radius: 10px;
+}
+.receipt-head > div:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.receipt-head strong {
+  font-family: var(--font-display);
+  font-size: 17px;
+}
+.receipt-head span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.receipt-no {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+.receipt-no span:first-child {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.receipt-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 18px 0;
+}
+.receipt-amount span {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.receipt-amount strong {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.receipt-lines {
+  display: grid;
+  margin: 0;
+}
+.receipt-lines div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  font-size: 13.5px;
+}
+.receipt-lines dt {
+  color: var(--text-muted);
+}
+.receipt-lines dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 500;
+}
+.receipt-foot {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.receipt.is-void::after {
+  content: 'VOID';
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-18deg);
+  padding: 4px 18px;
+  border: 4px solid var(--rose-500);
+  border-radius: 10px;
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  color: var(--rose-500);
+  opacity: 0.55;
+}
+.void-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--rose-500);
+}
+
+/* ---- Ledger ---- */
+.range-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.date-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.date-range .input {
+  width: auto;
+}
+.money-summary {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr 2fr;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.money-total,
+.money-split,
+.money-methods {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.money-total {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 16px 20px;
+  color: #eef3f2;
+  border-color: transparent;
+  background:
+    radial-gradient(300px 180px at 110% -30%, rgba(201, 191, 158, 0.3), transparent 70%),
+    linear-gradient(150deg, var(--teal-700), var(--teal-950));
+}
+.money-total span,
+.money-total small {
+  font-size: 12.5px;
+  color: #b4c8cf;
+}
+.money-total strong {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.money-split {
+  display: grid;
+  padding: 6px 18px;
+}
+.money-split div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  font-size: 13.5px;
+}
+.money-split div + div {
+  border-top: 1px solid var(--border);
+}
+.money-split span {
+  color: var(--text-muted);
+}
+.money-split strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.money-methods {
+  display: grid;
+  grid-template-columns: repeat(var(--n, 2), 1fr);
+  overflow: hidden;
+}
+.method-chip {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.method-chip + .method-chip {
+  border-left: 1px solid var(--border);
+}
+.method-chip:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.method-chip.on {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+.method-chip:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+}
+.method-chip span {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.method-chip strong {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.export-btn {
+  margin-left: auto;
+}
+
+.money-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.money-table th.num {
+  text-align: right;
+}
+.money-table tfoot td {
+  padding: 14px 20px;
+  border-top: 2px solid var(--border);
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+.money-table tfoot strong {
+  font-size: 16px;
+  color: var(--text);
+}
+.money-table tr.is-void td {
+  color: var(--text-muted);
+}
+.money-table tr.is-void .num strong,
+.money-table tr.is-void .member-name-link {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.void-tag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rose-500);
+  background: rgba(214, 69, 69, 0.1);
+  cursor: help;
+}
+.receipt-link {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 12.5px;
+}
+.ref {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.kind-tag {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.neg {
+  color: var(--rose-500);
+}
+.due-amount {
+  color: var(--warn);
+}
+.overdue {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rose-500);
+}
+.seat-shift {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.seat-pill-sm {
+  min-width: 34px;
+  height: 24px;
+  font-size: 12px;
+}
+
+.btn-square {
+  width: 32px;
+  padding: 0;
+}
+
+/* ---- Payment status chips (bookings, seats, profile) ---- */
+.pay-status {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pay-paid {
+  color: var(--money-green);
+  background: color-mix(in srgb, var(--money-green) 14%, transparent);
+}
+.pay-partial,
+.pay-unpaid {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 13%, transparent);
+}
+.pay-nofee {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+.slot-due {
+  justify-self: start;
+  margin-top: 4px;
+}
+.slot-member .slot-due {
+  align-self: flex-start;
+}
+.booking-card-money {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.pay-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.link-muted {
+  color: var(--text-muted);
+}
+
+/* ---- Fee plans ---- */
+.plan-examples {
+  display: grid;
+  margin: 0;
+}
+.plan-examples div {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.plan-examples dt {
+  color: var(--text-muted);
+}
+.plan-examples dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.insight p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+/* ---- UPI QR (member Pay screen, front desk, settings preview) ---- */
+.upi-box {
+  display: grid;
+  gap: 10px;
+}
+.upi-open {
+  text-decoration: none;
+}
+.upi-qr {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px dashed var(--border);
+  background: var(--input-bg);
+}
+.upi-qr img {
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
+}
+.upi-qr-empty {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.upi-qr-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.upi-pay-to {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.upi-pay-to strong {
+  color: var(--text);
+  font-size: 15px;
+}
+.upi-payee {
+  font-size: 15px;
+}
+.upi-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+  text-align: left;
+  cursor: pointer;
+}
+.upi-amount-hint {
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--text) !important;
+}
+.desk-qr {
+  display: grid;
+  gap: 6px;
+}
+
+/* ---- Payment settings page ---- */
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+  align-items: start;
+}
+.settings-main {
+  display: grid;
+  gap: 20px;
+}
+.settings-preview {
+  position: sticky;
+  top: 24px;
+}
+.preview-empty {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.settings-preview .upi-qr {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.qr-choice {
+  grid-template-columns: 1fr 1fr;
+}
+.qr-choice label span {
+  line-height: 1.45;
+}
+.qr-upload {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px dashed var(--border);
+  background: var(--input-bg);
+}
+.qr-upload img,
+.qr-upload-empty {
+  flex-shrink: 0;
+  width: 140px;
+  height: 140px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: #fff;
+}
+.qr-upload-empty {
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1.5px dashed var(--border);
+}
+.qr-upload-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.switch-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  cursor: pointer;
+}
+.switch-row > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.switch-row small {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  margin-top: 1px;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--text-muted) 35%, transparent);
+  transition: background-color 0.15s;
+  pointer-events: none;
+}
+.switch-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s;
+}
+.switch input:checked + .switch-track {
+  background: var(--accent);
+}
+.switch input:checked + .switch-track::after {
+  transform: translateX(18px);
+}
+.switch input:focus-visible + .switch-track {
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+.switch input:disabled + .switch-track {
+  opacity: 0.45;
+}
+.settings-warning {
+  margin-top: 14px;
+  line-height: 1.55;
+}
+.auto-tag {
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* ---- Print a single receipt ---- */
+@media print {
+  body.print-receipt #root,
+  body.print-receipt .toasts {
+    display: none !important;
+  }
+  body.print-receipt .modal-backdrop {
+    position: static;
+    padding: 0;
+    background: none;
+    backdrop-filter: none;
+  }
+  body.print-receipt .modal {
+    max-height: none;
+    border: 0;
+    box-shadow: none;
+    animation: none;
+  }
+  body.print-receipt .modal-head,
+  body.print-receipt .modal-foot {
+    display: none;
+  }
+  body.print-receipt .receipt {
+    border-color: #999;
+    background: #fff;
+  }
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 1100px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+  .settings-preview {
+    position: static;
+  }
+  .money-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .money-methods {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 600px) {
+  .money-summary {
+    grid-template-columns: 1fr;
+  }
+  .money-methods {
+    grid-template-columns: 1fr 1fr;
+  }
+  .method-chip:nth-child(3) {
+    border-left: 0;
+  }
+  .method-chip:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+  .method-picker {
+    grid-template-columns: 1fr 1fr;
+  }
+  .fee-row {
+    grid-template-columns: 1fr 130px;
+  }
+  .date-range {
+    width: 100%;
+  }
+  .date-range .input {
+    flex: 1;
+    min-width: 0;
+  }
+  .upi-qr,
+  .qr-upload {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .qr-choice {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Required-field marker and inline field errors (e.g. UPI transaction ID) */
+.req {
+  margin-left: 2px;
+  color: var(--rose-500);
+  font-weight: 600;
+}
+.input.is-invalid {
+  border-color: var(--rose-500);
+}
+.input.is-invalid:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rose-500) 22%, transparent);
+}
+.input-error {
+  margin: 2px 2px 0;
+  font-size: 12.5px;
+  color: var(--rose-500);
+}

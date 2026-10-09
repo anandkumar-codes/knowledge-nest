@@ -1,0 +1,495 @@
+/* ============ Reports & charts ============ */
+/* Chart colours were checked with the dataviz palette validator (CVD separation, contrast,
+   lightness band, chroma) against the light surface #fffdf8 and the dark surface #10303f. */
+:root {
+  --viz-1: #0f6e9e; /* teal: single series, evening */
+  --viz-2: #b8781a; /* amber: morning */
+  --viz-grid: #ebe5d3;
+  --viz-axis: #cfc6ab;
+  --viz-tick: #7d8a8f;
+  --viz-up: #2f7d62;
+  --viz-down: #c03b3b;
+  /* Sequential ramp for the seat heatmap: one hue, mixed into the surface. */
+  --heat-0: color-mix(in oklab, var(--viz-1) 8%, var(--surface));
+  --heat-1: color-mix(in oklab, var(--viz-1) 26%, var(--surface));
+  --heat-2: color-mix(in oklab, var(--viz-1) 48%, var(--surface));
+  --heat-3: color-mix(in oklab, var(--viz-1) 72%, var(--surface));
+  --heat-4: color-mix(in oklab, var(--viz-1) 100%, var(--surface));
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --viz-1: #3a95cc;
+    --viz-2: #b98424;
+    --viz-grid: #1d4253;
+    --viz-axis: #2b5466;
+    --viz-tick: #8ea4ab;
+    --viz-up: #6cc6a1;
+    --viz-down: #ef7b7b;
+  }
+}
+
+/* ---- Layout ---- */
+.range-note {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.reports-body {
+  transition: opacity 0.2s;
+}
+.reports-body.is-loading {
+  opacity: 0.55; /* keep the previous render while refetching */
+}
+.kpi-row {
+  display: grid;
+  grid-template-columns: minmax(290px, 1.7fr) repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  min-width: 0;
+}
+.kpi-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.kpi-value {
+  font-family: var(--font-body);
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.kpi-hero {
+  color: #eef3f2;
+  border-color: transparent;
+  background:
+    radial-gradient(300px 180px at 110% -30%, rgba(201, 191, 158, 0.3), transparent 70%),
+    linear-gradient(150deg, var(--teal-700), var(--teal-950));
+}
+.kpi-hero .kpi-label,
+.kpi-hero .kpi-note,
+.kpi-hero .kpi-vs {
+  color: #b4c8cf;
+}
+.kpi-hero .kpi-value {
+  font-size: 48px;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.kpi-delta {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.kpi-delta.up {
+  color: var(--viz-up);
+}
+.kpi-delta.down {
+  color: var(--viz-down);
+}
+.kpi-delta.flat {
+  color: var(--text-muted);
+}
+.kpi-hero .kpi-delta.up {
+  color: #8fe0bd;
+}
+.kpi-hero .kpi-delta.down {
+  color: #ffb3b3;
+}
+.kpi-vs {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.kpi-note {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.span-2 {
+  grid-column: 1 / -1;
+}
+.report-side {
+  display: grid;
+  gap: 20px;
+}
+.chart-card {
+  padding: 20px 22px 18px;
+  min-width: 0;
+}
+.chart-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.chart-card-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+}
+.chart-card-head p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.chart-card-head .link {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.chart-table {
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.chart-table .table td,
+.chart-table .table th {
+  padding: 8px 14px;
+}
+.chart-empty {
+  margin: 0;
+  padding: 48px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.chart-foot,
+.reports-footnote {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.reports-footnote {
+  margin-top: 20px;
+  max-width: 760px;
+}
+
+/* ---- SVG charts ---- */
+.viz-wrap {
+  position: relative;
+  width: 100%;
+}
+.viz-wrap svg {
+  display: block;
+  overflow: visible;
+}
+.viz-grid {
+  stroke: var(--viz-grid);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.viz-baseline {
+  stroke: var(--viz-axis);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.viz-tick {
+  font-size: 11px;
+  fill: var(--viz-tick);
+  font-variant-numeric: tabular-nums;
+}
+.viz-label {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--text);
+}
+.viz-bar {
+  fill: var(--viz-1);
+  transition: fill 0.12s;
+}
+.viz-bar.is-hover {
+  fill: color-mix(in oklab, var(--viz-1) 75%, var(--surface));
+}
+.viz-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.viz-line.viz-s1 {
+  stroke: var(--viz-1);
+}
+.viz-line.viz-s2 {
+  stroke: var(--viz-2);
+}
+.viz-dot {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.viz-dot.viz-s1 {
+  fill: var(--viz-1);
+}
+.viz-dot.viz-s2 {
+  fill: var(--viz-2);
+}
+.viz-crosshair {
+  stroke: var(--viz-tick);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.viz-hit {
+  fill: transparent;
+  cursor: crosshair;
+  outline: none;
+}
+.viz-hit:focus-visible {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.viz-tooltip {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, -100%);
+  display: grid;
+  gap: 2px;
+  min-width: 120px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 10px 24px -12px rgba(17, 48, 63, 0.45);
+  font-size: 12.5px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.viz-tooltip strong {
+  font-size: 15px;
+  color: var(--text);
+}
+.viz-tooltip > span {
+  color: var(--text-muted);
+}
+.viz-tip-title {
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+.viz-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.viz-tip-row span {
+  color: var(--text-muted);
+}
+.viz-key {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  vertical-align: middle;
+}
+.viz-key.viz-s1 {
+  background: var(--viz-1);
+}
+.viz-key.viz-s2 {
+  background: var(--viz-2);
+}
+.viz-legend {
+  display: flex;
+  gap: 18px;
+  margin: -4px 0 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.viz-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.viz-legend .viz-key {
+  height: 3px;
+}
+
+/* ---- Bar list ---- */
+.viz-barlist {
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+.viz-barlist li {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 13.5px;
+}
+.viz-barlist-label {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.viz-barlist-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.viz-barlist-bar {
+  flex: none;
+  width: calc((100% - 88px) * var(--r));
+  height: 14px;
+  border-radius: 0 4px 4px 0;
+  background: var(--viz-1);
+}
+.viz-barlist-value {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Seat heatmap ---- */
+.heat-wrap {
+  overflow-x: auto;
+}
+.heat-grid {
+  display: grid;
+  gap: 4px;
+  justify-content: center;
+  padding: 4px 0;
+}
+.heat-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.heat-cell {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 30px;
+  border-radius: 6px 6px 4px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  cursor: default;
+  outline: none;
+  transition: transform 0.1s;
+}
+.heat-cell.aisle-after {
+  margin-right: 14px;
+}
+.heat-0 { background: var(--heat-0); }
+.heat-1 { background: var(--heat-1); }
+.heat-2 { background: var(--heat-2); }
+.heat-3 { background: var(--heat-3); color: #fff; }
+.heat-4 { background: var(--heat-4); color: #fff; }
+@media (prefers-color-scheme: dark) {
+  /* Bright fills on the dark theme take dark ink, not white. */
+  .heat-3,
+  .heat-4 {
+    color: var(--teal-950);
+  }
+}
+.heat-cell.is-maintenance {
+  background-image: repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.12) 0 3px, transparent 3px 7px);
+}
+.heat-cell.is-hover,
+.heat-cell:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text);
+}
+.heat-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.heat-legend i {
+  width: 26px;
+  height: 12px;
+  border-radius: 3px;
+}
+.heat-legend span:first-child {
+  margin-right: 6px;
+}
+.heat-legend span:last-child {
+  margin-left: 6px;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 1280px) {
+  .kpi-row {
+    grid-template-columns: minmax(290px, 1.4fr) repeat(2, minmax(0, 1fr));
+  }
+  .kpi-hero {
+    grid-row: span 2;
+  }
+}
+@media (max-width: 1240px) {
+  .report-grid {
+    grid-template-columns: 1fr;
+  }
+  .report-side {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .report-side {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 1000px) {
+  .range-note {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+@media (max-width: 600px) {
+  .kpi-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .kpi-hero {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+  .kpi-hero .kpi-value {
+    font-size: 40px;
+  }
+  .kpi-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .kpi-value {
+    font-size: 21px;
+  }
+  .heat-cell {
+    width: 26px;
+    height: 24px;
+    font-size: 8px;
+  }
+  .heat-row,
+  .heat-grid {
+    gap: 2px;
+  }
+  .heat-cell.aisle-after {
+    margin-right: 7px;
+  }
+  .chart-card {
+    padding: 16px 14px;
+  }
+}
