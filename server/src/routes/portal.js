@@ -47,21 +47,21 @@ const REMOVED = 'Your portal access is not active. Please contact the front desk
 router.post('/login', loginLimiters, async (req, res) => {
   const { phone, password, remember } = req.body ?? {};
   if (!phone || !password) throw new HttpError(400, 'Enter your phone number and password.');
-  const found = findMemberForLogin(phone);
+  const found = await findMemberForLogin(phone);
   // Same message (and the same time taken) for unknown phone, wrong password and no access, so accounts can't be probed.
   if (!(await verifyPortalPassword(found?.hash, password))) {
     throw new HttpError(401, 'Phone number or password is incorrect.');
   }
-  const state = portalState(found.member.id);
+  const state = await portalState(found.member.id);
   if (!state.portal_enabled || found.member.status !== 'active') throw new HttpError(403, REMOVED);
 
-  touchPortalLogin(found.member.id);
+  await touchPortalLogin(found.member.id);
   res.json({ token: signToken(found.member.id, remember), member: memberDTO(found.member, state.portal_must_change) });
 });
 
 const PASSWORD_ROUTES = new Set(['/me', '/change-password']);
 
-function authenticateMember(req, _res, next) {
+async function authenticateMember(req, _res, next) {
   const header = req.headers.authorization ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) throw new HttpError(401, 'Please sign in.');
@@ -73,8 +73,8 @@ function authenticateMember(req, _res, next) {
   }
   if (payload.kind !== 'member') throw new HttpError(401, 'Please sign in.');
   const id = parseId(payload.sub);
-  const member = id && findMember(id);
-  const state = member && portalState(member.id);
+  const member = id && (await findMember(id));
+  const state = member && (await portalState(member.id));
   if (!member || member.status !== 'active' || !state.portal_enabled) throw new HttpError(401, REMOVED);
   // Sessions opened before the latest password change (by the member or a front-desk reset) no longer count.
   if (state.portal_password_changed_at && payload.iat < state.portal_password_changed_at) {
@@ -93,29 +93,29 @@ function authenticateMember(req, _res, next) {
 router.use(authenticateMember);
 
 // Everything the portal shows, in one call.
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   const m = req.member;
   res.json({
     today: today(),
-    shifts: getShifts(),
-    upi: publicPaymentSettings(),
+    shifts: await getShifts(),
+    upi: await publicPaymentSettings(),
     member: memberDTO(m, req.mustChange),
-    bookings: listMemberAllocations(m.id).map(allocationDTO),
-    payments: listMemberPayments(m.id).map(paymentDTO),
-    claims: listClaims({ memberId: m.id }).map(claimDTO),
+    bookings: (await listMemberAllocations(m.id)).map(allocationDTO),
+    payments: (await listMemberPayments(m.id)).map(paymentDTO),
+    claims: (await listClaims({ memberId: m.id })).map(claimDTO),
   });
 });
 
 // Members may update their contact details; name and phone stay with the front desk.
-router.patch('/me', (req, res) => {
+router.patch('/me', async (req, res) => {
   const { email, address, guardianPhone, preparingFor } = req.body ?? {};
-  const updated = updateMember(req.member.id, { email, address, guardianPhone, preparingFor });
+  const updated = await updateMember(req.member.id, { email, address, guardianPhone, preparingFor });
   res.json({ member: memberDTO(updated, req.mustChange) });
 });
 
 router.post('/change-password', async (req, res) => {
   const { currentPassword, newPassword } = req.body ?? {};
-  const found = findMemberForLogin(req.member.code);
+  const found = await findMemberForLogin(req.member.code);
   if (!(await verifyPortalPassword(found.hash, currentPassword))) {
     throw new HttpError(400, 'Current password is incorrect.');
   }
@@ -126,26 +126,26 @@ router.post('/change-password', async (req, res) => {
   await setPortalPassword(req.member.id, newPassword, { mustChange: false });
   // Other devices are now signed out; this one gets a fresh token with the same lifetime as before.
   const remember = (req.auth.exp - req.auth.iat) > 24 * 60 * 60;
-  res.json({ token: signToken(req.member.id, remember), member: memberDTO(findMember(req.member.id), false) });
+  res.json({ token: signToken(req.member.id, remember), member: memberDTO(await findMember(req.member.id), false) });
 });
 
 // "I've paid by UPI": recorded as a claim. With auto-confirm on, it becomes a payment (and receipt)
 // straight away; otherwise it waits for the front desk to verify it.
-router.post('/claims', (req, res) => {
-  const settings = getPaymentSettings();
+router.post('/claims', async (req, res) => {
+  const settings = await getPaymentSettings();
   if (!onlinePaymentsReady(settings)) throw new HttpError(409, 'Online payment is not set up yet. Please pay at the front desk.');
 
   const id = parseId(req.body?.allocationId);
-  const booking = id && findAllocation(id);
+  const booking = id && (await findAllocation(id));
   if (!booking || booking.memberId !== req.member.id) throw new HttpError(404, 'Booking not found.');
 
   const utr = String(req.body?.utr ?? '').replace(/\s/g, '');
   if (!/^[A-Za-z0-9]{6,30}$/.test(utr)) {
     throw new HttpError(400, 'Enter the UPI transaction ID (UTR) from your payment app. It is usually 12 digits.');
   }
-  if (utrInUse(utr)) throw new HttpError(409, 'This transaction ID has already been submitted.');
+  if (await utrInUse(utr)) throw new HttpError(409, 'This transaction ID has already been submitted.');
   const amount = parseAmount(req.body?.amount, 'Amount', 1);
-  const outstanding = booking.balance - pendingClaimTotal(booking.id);
+  const outstanding = booking.balance - (await pendingClaimTotal(booking.id));
   if (outstanding <= 0) {
     throw new HttpError(409, 'Nothing is due on this booking (payments you submitted are still being checked).');
   }
@@ -155,15 +155,15 @@ router.post('/claims', (req, res) => {
   const note = String(req.body?.note ?? '').trim();
   if (note.length > 200) throw new HttpError(400, 'Note must be 200 characters or fewer.');
 
-  const result = transaction(() => {
-    const claim = createClaim({ allocationId: booking.id, memberId: req.member.id, amount, utr, note });
+  const result = await transaction(async () => {
+    const claim = await createClaim({ allocationId: booking.id, memberId: req.member.id, amount, utr, note });
     if (!settings.autoConfirm) return { claim };
-    const payment = createPayment({
+    const payment = await createPayment({
       allocation: booking, kind: 'payment', amount, method: 'upi', reference: utr, paidOn: today(),
       notes: 'Paid online (member portal), auto-confirmed', receivedBy: null,
     });
     return {
-      claim: reviewClaim(claim.id, { status: 'approved', note: 'Auto-confirmed', userId: null, paymentId: payment.id }),
+      claim: await reviewClaim(claim.id, { status: 'approved', note: 'Auto-confirmed', userId: null, paymentId: payment.id }),
       payment,
     };
   });

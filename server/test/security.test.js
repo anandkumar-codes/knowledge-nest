@@ -1,5 +1,8 @@
-// Run with `npm test` (in server/). Uses a throwaway in-memory database; your real data is never touched.
-process.env.DATABASE_PATH = ':memory:';
+// Run with `npm test` (in server/). Uses a throwaway database file in the temp folder; your real data is never touched.
+import os from 'node:os';
+import path from 'node:path';
+process.env.DATABASE_PATH = path.join(os.tmpdir(), `knest-test-${process.pid}-${Date.now()}.db`);
+delete process.env.TURSO_DATABASE_URL;
 process.env.JWT_SECRET = 'test-secret';
 process.env.APP_TIMEZONE = 'Asia/Kolkata';
 delete process.env.TRUST_PROXY;
@@ -10,7 +13,7 @@ import { after, before, test } from 'node:test';
 const { db } = await import('../src/db.js');
 const { createApp } = await import('../src/app.js');
 const { seed } = await import('../src/seed.js');
-const { localDate } = await import('../src/utils/dates.js');
+const { localDate, localDateSql } = await import('../src/utils/dates.js');
 const { createMember } = await import('../src/models/members.js');
 const { setPortalPassword } = await import('../src/models/portal.js');
 const { setPaymentSettings } = await import('../src/models/paymentSettings.js');
@@ -44,11 +47,11 @@ before(async () => {
 });
 after(() => server.close());
 
-test('dates follow the reading room time zone, not the server', () => {
+test('dates follow the reading room time zone, not the server', async () => {
   // 20:00 UTC on 9 Oct is 01:30 on 10 Oct in India.
   assert.equal(localDate('2026-10-09T20:00:00.000Z'), '2026-10-10');
   assert.equal(localDate('2026-10-09T10:00:00.000Z'), '2026-10-09');
-  const row = db.prepare("SELECT local_date('2026-10-09T20:00:00.000Z') AS d").get();
+  const row = await db.prepare(`SELECT ${localDateSql("'2026-10-09T20:00:00.000Z'")} AS d`).get();
   assert.equal(row.d, '2026-10-10');
 });
 
@@ -82,7 +85,7 @@ test('changing a password signs out other sessions but keeps this one', async ()
 });
 
 test('passwords typed by an admin must include a letter and a number', async () => {
-  const roleId = db.prepare('SELECT id FROM roles LIMIT 1').get().id;
+  const roleId = (await db.prepare('SELECT id FROM roles LIMIT 1').get()).id;
   const weak = await call('POST', '/api/users', {
     token: ADMIN.token,
     body: { name: 'Desk', email: 'desk@test.in', password: 'abcdefgh', roleId: String(roleId) },
@@ -96,7 +99,7 @@ test('passwords typed by an admin must include a letter and a number', async () 
 });
 
 test('member portal: a front-desk reset signs out the old session', async () => {
-  const m = createMember({ name: 'Ravi', phone: '9876543210' });
+  const m = await createMember({ name: 'Ravi', phone: '9876543210' });
   await setPortalPassword(m.id, 'Ravi12345', { mustChange: false });
   const login = await call('POST', '/api/portal/login', { body: { phone: '98765 43210', password: 'Ravi12345' } });
   assert.equal(login.status, 200, JSON.stringify(login.data));
@@ -108,10 +111,10 @@ test('member portal: a front-desk reset signs out the old session', async () => 
 });
 
 test('voiding a payment from an online claim rejects the claim so it can be resubmitted', async () => {
-  setPaymentSettings({ vpa: 'nest@okhdfcbank', payee: 'Knowledge Nest', qrMode: 'generated', autoConfirm: true }, null);
-  const m = createMember({ name: 'Asha', phone: '9123456780' });
+  await setPaymentSettings({ vpa: 'nest@okhdfcbank', payee: 'Knowledge Nest', qrMode: 'generated', autoConfirm: true }, null);
+  const m = await createMember({ name: 'Asha', phone: '9123456780' });
   await setPortalPassword(m.id, 'Asha12345', { mustChange: false });
-  const seat = db.prepare('SELECT id FROM seats LIMIT 1').get();
+  const seat = await db.prepare('SELECT id FROM seats LIMIT 1').get();
   const today = localDate();
   const booked = await call('POST', `/api/seats/${seat.id}/allocations`, {
     token: ADMIN.token,
@@ -131,7 +134,7 @@ test('voiding a payment from an online claim rejects the claim so it can be resu
     token: ADMIN.token, body: { reason: 'Not in bank statement' },
   });
   assert.equal(voided.status, 200, JSON.stringify(voided.data));
-  const row = db.prepare('SELECT status, review_note FROM payment_claims WHERE id = ?').get(Number(claim.data.claim.id));
+  const row = await db.prepare('SELECT status, review_note FROM payment_claims WHERE id = ?').get(Number(claim.data.claim.id));
   assert.equal(row.status, 'rejected');
   assert.match(row.review_note, /Not in bank statement/);
 
@@ -143,11 +146,12 @@ test('voiding a payment from an online claim rejects the claim so it can be resu
   assert.equal(again.status, 201, JSON.stringify(again.data));
 });
 
-test('staff writes are recorded in the audit log without request bodies', () => {
-  const rows = db.prepare('SELECT method, path, status, user_name FROM audit_log').all();
+test('staff writes are recorded in the audit log without request bodies', async () => {
+  await new Promise((r) => setTimeout(r, 200)); // audit rows are written just after each response
+  const rows = await db.prepare('SELECT method, path, status, user_name FROM audit_log').all();
   assert.ok(rows.some((r) => r.path === '/api/auth/change-password' && r.status === 200));
   assert.ok(rows.some((r) => r.path.startsWith('/api/payments/') && r.path.endsWith('/void')));
-  const cols = db.prepare('PRAGMA table_info(audit_log)').all().map((c) => c.name);
+  const cols = (await db.prepare('PRAGMA table_info(audit_log)').all()).map((c) => c.name);
   assert.ok(!cols.includes('body'));
 });
 

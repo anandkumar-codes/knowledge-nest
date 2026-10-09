@@ -17,9 +17,9 @@ export function assertCanGrant(req, permissions) {
   }
 }
 
-function loadRole(idParam) {
+async function loadRole(idParam) {
   const id = parseId(idParam);
-  const role = id && findRole(id);
+  const role = id && (await findRole(id));
   if (!role) throw new HttpError(404, 'Role not found.');
   return role;
 }
@@ -28,19 +28,19 @@ router.get('/permissions', (_req, res) => {
   res.json({ permissions: PERMISSIONS });
 });
 
-router.get('/', requirePermission('team.view', 'team.manage', 'roles.manage'), (_req, res) => {
-  res.json({ roles: listRoles().map(toRoleDTO) });
+router.get('/', requirePermission('team.view', 'team.manage', 'roles.manage'), async (_req, res) => {
+  res.json({ roles: (await listRoles()).map(toRoleDTO) });
 });
 
-router.post('/', requirePermission('roles.manage'), (req, res) => {
+router.post('/', requirePermission('roles.manage'), async (req, res) => {
   const { name, description = '', permissions = [] } = req.body ?? {};
   if (!Array.isArray(permissions)) throw new HttpError(400, 'Permissions must be a list.');
   assertCanGrant(req, permissions);
-  res.status(201).json({ role: toRoleDTO(createRole({ name, description, permissions }, req.user.id)) });
+  res.status(201).json({ role: toRoleDTO(await createRole({ name, description, permissions }, req.user.id)) });
 });
 
-router.patch('/:id', requirePermission('roles.manage'), (req, res) => {
-  const role = loadRole(req.params.id);
+router.patch('/:id', requirePermission('roles.manage'), async (req, res) => {
+  const role = await loadRole(req.params.id);
   assertCanGrant(req, role.permissions);
 
   const { name, description, permissions } = req.body ?? {};
@@ -48,16 +48,16 @@ router.patch('/:id', requirePermission('roles.manage'), (req, res) => {
     if (!Array.isArray(permissions)) throw new HttpError(400, 'Permissions must be a list.');
     assertCanGrant(req, permissions);
   }
-  res.json({ role: toRoleDTO(updateRole(role.id, { name, description, permissions })) });
+  res.json({ role: toRoleDTO(await updateRole(role.id, { name, description, permissions })) });
 });
 
-router.delete('/:id', requirePermission('roles.manage'), (req, res) => {
-  const role = loadRole(req.params.id);
+router.delete('/:id', requirePermission('roles.manage'), async (req, res) => {
+  const role = await loadRole(req.params.id);
   assertCanGrant(req, role.permissions);
   if (role.memberCount) {
     throw new HttpError(409, `${role.memberCount} team member(s) still have this role. Reassign them first.`);
   }
-  deleteRole(role.id);
+  await deleteRole(role.id);
   res.status(204).end();
 });
 

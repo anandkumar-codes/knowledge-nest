@@ -1,6 +1,7 @@
 // SIGNIN_LIMIT_BY_ADDRESS=false: for setups where every visitor arrives from the same address (Tailscale Funnel).
 // Runs in its own process (node --test runs each file separately), with a throwaway in-memory database.
-process.env.DATABASE_PATH = ':memory:';
+process.env.DATABASE_PATH = `${process.env.TEMP ?? process.env.TMPDIR ?? '/tmp'}/knest-test-limit-${process.pid}-${Date.now()}.db`;
+delete process.env.TURSO_DATABASE_URL;
 process.env.JWT_SECRET = 'test-secret';
 process.env.SIGNIN_LIMIT_BY_ADDRESS = 'false';
 

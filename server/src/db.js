@@ -1,27 +1,91 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { fileURLToPath } from 'node:url';
-import { localDate } from './utils/dates.js';
+import { createClient } from '@libsql/client';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// DATABASE_PATH is resolved relative to the server folder; ':memory:' is allowed for tests.
-const configured = process.env.DATABASE_PATH ?? './data/knowledge-nest.db';
-const file = configured === ':memory:' ? configured : path.resolve(SERVER_ROOT, configured);
-if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
+/**
+ * Where the data lives:
+ *   - TURSO_DATABASE_URL (+ TURSO_AUTH_TOKEN): a Turso cloud database (used when hosted, e.g. on Render);
+ *   - otherwise DATABASE_PATH: a local SQLite file, resolved relative to the server folder
+ *     (default ./data/knowledge-nest.db).
+ * Both run the same SQL through the libSQL client.
+ */
+const remoteUrl = process.env.TURSO_DATABASE_URL?.trim();
+let url;
+let label;
+if (remoteUrl) {
+  url = remoteUrl;
+  label = remoteUrl.split('?')[0];
+} else {
+  const file = path.resolve(SERVER_ROOT, process.env.DATABASE_PATH ?? './data/knowledge-nest.db');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // libSQL wants one slash before an absolute path, also on Windows (file:/C:/...).
+  const forward = file.split(path.sep).join('/');
+  url = `file:${forward.startsWith('/') ? '' : '/'}${forward}`;
+  label = file;
+}
 
-export const db = new DatabaseSync(file);
-export const dbFile = file;
+const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN?.trim() || undefined });
+export const dbFile = label;
+export const isRemoteDb = !!remoteUrl;
 
-// local_date(timestamp): the reading room's calendar day for a stored ISO timestamp (stored in UTC).
-db.function('local_date', { deterministic: true }, (iso) => localDate(iso));
+// Inside transaction(), queries go to the open transaction instead of the shared connection.
+const txStore = new AsyncLocalStorage();
 
-db.exec(`
-  PRAGMA journal_mode = WAL;
-  PRAGMA foreign_keys = ON;
-  PRAGMA busy_timeout = 5000;
+// Rows as plain objects ({ column: value }), like the old node:sqlite API.
+const plain = (rs) => rs.rows.map((row) => Object.fromEntries(rs.columns.map((c, i) => [c, row[i]])));
 
+function execute(sql, args) {
+  return (txStore.getStore() ?? client).execute({ sql, args: args.map((a) => (a === undefined ? null : a)) });
+}
+
+/**
+ * The same shape as before (db.prepare(sql).get/all/run), but every call returns a promise:
+ *   await db.prepare('SELECT ...').get(...args)   -> first row, or undefined
+ *   await db.prepare('SELECT ...').all(...args)   -> array of rows
+ *   await db.prepare('INSERT ...').run(...args)   -> { lastInsertRowid, changes }
+ */
+export const db = {
+  prepare(sql) {
+    return {
+      get: async (...args) => plain(await execute(sql, args))[0],
+      all: async (...args) => plain(await execute(sql, args)),
+      run: async (...args) => {
+        const rs = await execute(sql, args);
+        return { lastInsertRowid: rs.lastInsertRowid === undefined ? 0 : Number(rs.lastInsertRowid), changes: rs.rowsAffected };
+      },
+    };
+  },
+  exec: (sql) => (txStore.getStore() ?? client).executeMultiple(sql),
+};
+
+// Runs fn as one all-or-nothing unit: everything it writes is saved together, or nothing is.
+export async function transaction(fn) {
+  if (txStore.getStore()) return fn(); // already inside one
+  const tx = await client.transaction('write');
+  try {
+    const result = await txStore.run(tx, fn);
+    await tx.commit();
+    return result;
+  } catch (err) {
+    await tx.rollback().catch(() => {});
+    throw err;
+  } finally {
+    tx.close();
+  }
+}
+
+export const closeDb = () => client.close();
+
+if (!remoteUrl) {
+  // Local file: write-ahead logging (fast and safe), and wait rather than fail when the file is busy.
+  await client.executeMultiple('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
+}
+
+await client.executeMultiple(`
   CREATE TABLE IF NOT EXISTS roles (
     id           INTEGER PRIMARY KEY,
     name         TEXT    NOT NULL,
@@ -170,26 +234,28 @@ db.exec(`
 `);
 
 // Lightweight migrations for databases created before a column existed.
-const userColumns = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+const columnsOf = async (table) => (await db.prepare(`PRAGMA table_info(${table})`).all()).map((c) => c.name);
+
+const userColumns = await columnsOf('users');
 if (!userColumns.includes('must_change_password')) {
-  db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+  await db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
 }
 // Unix seconds of the last password change; sessions signed in before it are rejected.
 if (!userColumns.includes('password_changed_at')) {
-  db.exec('ALTER TABLE users ADD COLUMN password_changed_at INTEGER');
+  await db.exec('ALTER TABLE users ADD COLUMN password_changed_at INTEGER');
 }
-const allocationColumns = db.prepare('PRAGMA table_info(seat_allocations)').all().map((c) => c.name);
+const allocationColumns = await columnsOf('seat_allocations');
 if (!allocationColumns.includes('fee')) {
-  db.exec('ALTER TABLE seat_allocations ADD COLUMN fee INTEGER NOT NULL DEFAULT 0');
+  await db.exec('ALTER TABLE seat_allocations ADD COLUMN fee INTEGER NOT NULL DEFAULT 0');
 }
 if (!allocationColumns.includes('moved_from')) {
-  db.exec('ALTER TABLE seat_allocations ADD COLUMN moved_from INTEGER REFERENCES seat_allocations(id)');
+  await db.exec('ALTER TABLE seat_allocations ADD COLUMN moved_from INTEGER REFERENCES seat_allocations(id)');
 }
 if (!allocationColumns.includes('kind')) {
-  db.exec("ALTER TABLE seat_allocations ADD COLUMN kind TEXT NOT NULL DEFAULT 'plan' CHECK (kind IN ('plan', 'day'))");
+  await db.exec("ALTER TABLE seat_allocations ADD COLUMN kind TEXT NOT NULL DEFAULT 'plan' CHECK (kind IN ('plan', 'day'))");
 }
 // Member portal login lives on the member row.
-const memberColumns = db.prepare('PRAGMA table_info(members)').all().map((c) => c.name);
+const memberColumns = await columnsOf('members');
 for (const [col, def] of [
   ['portal_enabled', 'INTEGER NOT NULL DEFAULT 0'],
   ['portal_password_hash', 'TEXT'],
@@ -198,19 +264,7 @@ for (const [col, def] of [
   ['anonymized_at', 'TEXT'], // set when a member's personal details were removed
   ['portal_password_changed_at', 'INTEGER'], // Unix seconds; portal sessions from before it are rejected
 ]) {
-  if (!memberColumns.includes(col)) db.exec(`ALTER TABLE members ADD COLUMN ${col} ${def}`);
+  if (!memberColumns.includes(col)) await db.exec(`ALTER TABLE members ADD COLUMN ${col} ${def}`);
 }
 
 export const now = () => new Date().toISOString();
-
-export function transaction(fn) {
-  db.exec('BEGIN');
-  try {
-    const result = fn();
-    db.exec('COMMIT');
-    return result;
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-}

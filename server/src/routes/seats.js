@@ -26,40 +26,40 @@ export const DAY_PASS_AHEAD = 30;
 
 const seatDTO = (seat, allocations = []) => ({ ...seat, id: String(seat.id), allocations });
 
-function loadSeat(idParam) {
+async function loadSeat(idParam) {
   const id = parseId(idParam);
-  const seat = id && findSeat(id);
+  const seat = id && (await findSeat(id));
   if (!seat) throw new HttpError(404, 'Seat not found.');
   return seat;
 }
 
-function loadOpenAllocation(idParam) {
+async function loadOpenAllocation(idParam) {
   const id = parseId(idParam);
-  const a = id && findAllocation(id);
+  const a = id && (await findAllocation(id));
   if (!a) throw new HttpError(404, 'Booking not found.');
   if (a.releasedAt) throw new HttpError(409, 'This booking was already released.');
   if (a.endDate < today()) throw new HttpError(409, 'This booking has already ended.');
   return a;
 }
 
-function clashMessage(clash, seatLabel = clash.seatLabel) {
+async function clashMessage(clash, seatLabel = clash.seatLabel) {
   if (clash.kind === 'day') {
     return `Seat ${seatLabel} has a day pass for ${clash.memberName} on ${formatDate(clash.startDate)}.`;
   }
-  const shiftName = getShifts().find((s) => s.key === clash.shift).label.toLowerCase();
+  const shiftName = (await getShifts()).find((s) => s.key === clash.shift).label.toLowerCase();
   return (
     `Seat ${seatLabel} is already booked for the ${shiftName} shift by ${clash.memberName} ` +
     `(${formatDate(clash.startDate)} – ${formatDate(clash.endDate)}).`
   );
 }
 
-function assertNoConflict(params) {
-  const [clash] = findConflicts(params);
-  if (clash) throw new HttpError(409, clashMessage(clash));
+async function assertNoConflict(params) {
+  const [clash] = await findConflicts(params);
+  if (clash) throw new HttpError(409, await clashMessage(clash));
 }
 
 // Who a booking is for: an active member, or (day passes only) a walk-in guest with just a name.
-function bookingPerson(body, isDay) {
+async function bookingPerson(body, isDay) {
   if (isDay && !body.memberId) {
     const name = String(body.guest?.name ?? '').trim().replace(/\s+/g, ' ');
     const phone = String(body.guest?.phone ?? '').trim();
@@ -69,28 +69,28 @@ function bookingPerson(body, isDay) {
     return { id: null, name, phone };
   }
   const memberId = parseId(body.memberId);
-  const member = memberId && findMember(memberId);
+  const member = memberId && (await findMember(memberId));
   if (!member) throw new HttpError(400, 'Choose a member.');
   if (member.status !== 'active') throw new HttpError(409, `${member.name} is archived. Restore them before booking.`);
   return member;
 }
 
 // Whole hall: every seat with its current and upcoming bookings.
-router.get('/', requirePermission('seats.view', 'seats.manage', 'bookings.view', 'bookings.manage'), (_req, res) => {
+router.get('/', requirePermission('seats.view', 'seats.manage', 'bookings.view', 'bookings.manage'), async (_req, res) => {
   const day = today();
   const bySeat = {};
-  for (const a of listOpenAllocations(day)) (bySeat[a.seatId] ??= []).push(allocationDTO(a));
+  for (const a of await listOpenAllocations(day)) (bySeat[a.seatId] ??= []).push(allocationDTO(a));
   res.json({
     today: day,
     capacity: CAPACITY,
     layout: HALL,
-    shifts: getShifts(),
-    seats: listSeats().map((s) => seatDTO(s, bySeat[s.id])),
+    shifts: await getShifts(),
+    seats: (await listSeats()).map((s) => seatDTO(s, bySeat[s.id])),
   });
 });
 
-router.patch('/:id', requirePermission('seats.manage'), (req, res) => {
-  const seat = loadSeat(req.params.id);
+router.patch('/:id', requirePermission('seats.manage'), async (req, res) => {
+  const seat = await loadSeat(req.params.id);
   const { status, notes } = req.body ?? {};
 
   if (status !== undefined && !['active', 'maintenance'].includes(status)) {
@@ -99,25 +99,25 @@ router.patch('/:id', requirePermission('seats.manage'), (req, res) => {
   if (notes !== undefined && (typeof notes !== 'string' || notes.length > 200)) {
     throw new HttpError(400, 'Notes must be 200 characters or fewer.');
   }
-  const open = listOpenAllocations(today(), seat.id);
+  const open = await listOpenAllocations(today(), seat.id);
   if (status === 'maintenance' && open.length) {
     throw new HttpError(
       409,
       `Seat ${seat.label} has ${open.length} active or upcoming booking(s). Release them before marking it under maintenance.`
     );
   }
-  const updated = updateSeat(seat.id, { status, notes: notes?.trim() });
+  const updated = await updateSeat(seat.id, { status, notes: notes?.trim() });
   res.json({ seat: seatDTO(updated, open.map(allocationDTO)) });
 });
 
-router.post('/:id/allocations', canBook, (req, res) => {
-  const seat = loadSeat(req.params.id);
+router.post('/:id/allocations', canBook, async (req, res) => {
+  const seat = await loadSeat(req.params.id);
   if (seat.status !== 'active') throw new HttpError(409, `Seat ${seat.label} is under maintenance.`);
 
   const body = req.body ?? {};
   const notes = String(body.notes ?? '').trim();
   const kind = body.kind === 'day' ? 'day' : 'plan';
-  const member = bookingPerson(body, kind === 'day');
+  const member = await bookingPerson(body, kind === 'day');
 
   let { shift, startDate, endDate } = body;
   if (kind === 'day') {
@@ -141,12 +141,12 @@ router.post('/:id/allocations', canBook, (req, res) => {
   const fee = parseAmount(body.fee ?? 0, 'Fee');
   if (body.payment && !canCollect(req)) throw new HttpError(403, "You don't have permission to record payments.");
 
-  assertNoConflict({ seatId: seat.id, shift, startDate, endDate });
+  await assertNoConflict({ seatId: seat.id, shift, startDate, endDate });
   // Booking and the first payment are saved together, so a rejected payment doesn't leave a booking behind.
-  const allocation = transaction(() => {
-    const created = createAllocation({ seatId: seat.id, member, shift, startDate, endDate, notes, fee, kind, createdBy: req.user.id });
+  const allocation = await transaction(async () => {
+    const created = await createAllocation({ seatId: seat.id, member, shift, startDate, endDate, notes, fee, kind, createdBy: req.user.id });
     if (body.payment) {
-      createPayment({ allocation: created, ...checkPayment(created, body.payment), receivedBy: req.user.id });
+      await createPayment({ allocation: created, ...(await checkPayment(created, body.payment)), receivedBy: req.user.id });
     }
     return findAllocation(created.id);
   });
@@ -154,8 +154,8 @@ router.post('/:id/allocations', canBook, (req, res) => {
 });
 
 // Extend (or shorten) a booking.
-router.patch('/allocations/:id', canBook, (req, res) => {
-  const a = loadOpenAllocation(req.params.id);
+router.patch('/allocations/:id', canBook, async (req, res) => {
+  const a = await loadOpenAllocation(req.params.id);
   if (a.kind === 'day') throw new HttpError(409, "A day pass is for a single day and can't be extended. Book another day pass instead.");
   const { endDate } = req.body ?? {};
   const addFee = parseAmount(req.body?.addFee ?? 0, 'Extra fee');
@@ -163,27 +163,27 @@ router.patch('/allocations/:id', canBook, (req, res) => {
   if (endDate < a.startDate) throw new HttpError(400, 'End date must be on or after the start date.');
   if (endDate < today()) throw new HttpError(400, "End date can't be in the past. Release the seat instead.");
 
-  assertNoConflict({ seatId: a.seatId, shift: a.shift, startDate: a.startDate, endDate, excludeId: a.id });
-  res.json({ allocation: allocationDTO(setAllocationEndDate(a.id, endDate, addFee)) });
+  await assertNoConflict({ seatId: a.seatId, shift: a.shift, startDate: a.startDate, endDate, excludeId: a.id });
+  res.json({ allocation: allocationDTO(await setAllocationEndDate(a.id, endDate, addFee)) });
 });
 
 // Change seat for the rest of the plan (same shift, same end date, fee and payments unchanged).
-router.post('/allocations/:id/move', canBook, (req, res) => {
-  const a = loadOpenAllocation(req.params.id);
-  const seat = loadSeat(req.body?.seatId);
+router.post('/allocations/:id/move', canBook, async (req, res) => {
+  const a = await loadOpenAllocation(req.params.id);
+  const seat = await loadSeat(req.body?.seatId);
   if (seat.id === a.seatId) throw new HttpError(400, `${a.memberName} is already on seat ${seat.label}.`);
   if (seat.status !== 'active') throw new HttpError(409, `Seat ${seat.label} is under maintenance.`);
 
   const day = today();
   const from = a.startDate > day ? a.startDate : day;
-  const [clash] = findConflicts({ seatId: seat.id, shift: a.shift, startDate: from, endDate: a.endDate, excludeId: a.id });
-  if (clash) throw new HttpError(409, clashMessage(clash, seat.label));
-  res.json({ allocation: allocationDTO(moveAllocation(a, seat.id, day, req.user.id)) });
+  const [clash] = await findConflicts({ seatId: seat.id, shift: a.shift, startDate: from, endDate: a.endDate, excludeId: a.id });
+  if (clash) throw new HttpError(409, await clashMessage(clash, seat.label));
+  res.json({ allocation: allocationDTO(await moveAllocation(a, seat.id, day, req.user.id)) });
 });
 
-router.post('/allocations/:id/release', canBook, (req, res) => {
-  const a = loadOpenAllocation(req.params.id);
-  releaseAllocation(a.id, req.user.id);
+router.post('/allocations/:id/release', canBook, async (req, res) => {
+  const a = await loadOpenAllocation(req.params.id);
+  await releaseAllocation(a.id, req.user.id);
   res.json({ ok: true });
 });
 

@@ -13,11 +13,9 @@ export function auditTrail(req, res, next) {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
   res.on('finish', () => {
     if (!req.user) return; // sign-in attempts and member portal requests have no staff user
-    try {
-      insert.run(req.user.id, req.user.name, req.method, req.originalUrl.split('?')[0], res.statusCode, req.ip ?? '', now());
-    } catch (err) {
-      console.error('Could not write audit log:', err.message);
-    }
+    insert
+      .run(req.user.id, req.user.name, req.method, req.originalUrl.split('?')[0], res.statusCode, req.ip ?? '', now())
+      .catch((err) => console.error('Could not write audit log:', err.message));
   });
   next();
 }

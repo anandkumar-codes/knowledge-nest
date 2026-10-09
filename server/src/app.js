@@ -15,11 +15,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HttpError } from './utils/http.js';
 import { auditTrail } from './middleware/audit.js';
+import { serializeWrites } from './middleware/serialize.js';
 import { trustProxySetting } from './middleware/rateLimits.js';
 import { securityHeaders } from './middleware/security.js';
 
-const SQLITE_CONSTRAINT_UNIQUE = 2067;
-const SQLITE_CONSTRAINT_FOREIGNKEY = 787;
+// Database constraint errors: matched by code (local file) or message (Turso), which word them the same way.
+const isUniqueViolation = (err) => err?.rawCode === 2067 || /UNIQUE constraint failed/i.test(err?.message ?? '');
+const isForeignKeyViolation = (err) => err?.rawCode === 787 || /FOREIGN KEY constraint failed/i.test(err?.message ?? '');
 
 // The built web app (`npm run build` in the project root). When present, the API serves it too,
 // so production needs a single process on a single origin.
@@ -55,6 +57,7 @@ export function createApp() {
   app.use(securityHeaders);
   app.use(cors({ origin: allowedOrigins() }));
   app.use('/api', auditTrail);
+  app.use('/api', serializeWrites);
   // Mounted before the global JSON parser: it parses its own (larger) bodies for QR image uploads.
   app.use('/api/payment-settings', paymentSettingsRoutes);
   app.use(express.json({ limit: '100kb' }));
@@ -81,7 +84,7 @@ export function createApp() {
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
-    if (err?.errcode === SQLITE_CONSTRAINT_UNIQUE) {
+    if (isUniqueViolation(err)) {
       const what = err.message.includes('users.email')
         ? 'A team member with this email'
         : err.message.includes('members.phone_key')
@@ -89,7 +92,7 @@ export function createApp() {
           : 'A role with this name';
       return res.status(409).json({ error: `${what} already exists.` });
     }
-    if (err?.errcode === SQLITE_CONSTRAINT_FOREIGNKEY) {
+    if (isForeignKeyViolation(err)) {
       return res.status(409).json({ error: 'This record is still in use. Reassign or remove what depends on it first.' });
     }
     if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON.' });

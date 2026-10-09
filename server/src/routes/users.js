@@ -11,17 +11,17 @@ import { assertCanGrant } from './roles.js';
 const router = Router();
 router.use(authenticate);
 
-function loadRole(idValue) {
+async function loadRole(idValue) {
   const id = parseId(idValue);
-  const role = id && findRole(id);
+  const role = id && (await findRole(id));
   if (!role) throw new HttpError(400, 'Choose a valid role.');
   return role;
 }
 
 // Loads a team member the current user is allowed to change.
-function loadManageableUser(req) {
+async function loadManageableUser(req) {
   const id = parseId(req.params.id);
-  const target = id && findUser(id);
+  const target = id && (await findUser(id));
   if (!target) throw new HttpError(404, 'Team member not found.');
   if (target.isSuperAdmin) throw new HttpError(403, 'The super admin account cannot be changed here.');
   if (target.id === req.user.id) {
@@ -34,13 +34,13 @@ function loadManageableUser(req) {
 
 const generatePassword = () => crypto.randomBytes(9).toString('base64url');
 
-router.get('/', requirePermission('team.view', 'team.manage'), (_req, res) => {
-  res.json({ users: listUsers().map(toUserDTO) });
+router.get('/', requirePermission('team.view', 'team.manage'), async (_req, res) => {
+  res.json({ users: (await listUsers()).map(toUserDTO) });
 });
 
 router.post('/', requirePermission('team.manage'), async (req, res) => {
   const { name, email, password, roleId } = req.body ?? {};
-  const role = loadRole(roleId);
+  const role = await loadRole(roleId);
   assertCanGrant(req, role.permissions);
 
   if (password) checkChosenPassword(password);
@@ -53,29 +53,29 @@ router.post('/', requirePermission('team.manage'), async (req, res) => {
   res.status(201).json({ user: toUserDTO(user), ...(password ? {} : { tempPassword }) });
 });
 
-router.patch('/:id', requirePermission('team.manage'), (req, res) => {
-  const target = loadManageableUser(req);
+router.patch('/:id', requirePermission('team.manage'), async (req, res) => {
+  const target = await loadManageableUser(req);
   const { name, roleId, status } = req.body ?? {};
 
   let nextRoleId;
   if (roleId !== undefined) {
-    const role = loadRole(roleId);
+    const role = await loadRole(roleId);
     assertCanGrant(req, role.permissions);
     nextRoleId = role.id;
   }
-  res.json({ user: toUserDTO(updateUser(target.id, { name, roleId: nextRoleId, status })) });
+  res.json({ user: toUserDTO(await updateUser(target.id, { name, roleId: nextRoleId, status })) });
 });
 
 router.post('/:id/reset-password', requirePermission('team.manage'), async (req, res) => {
-  const target = loadManageableUser(req);
+  const target = await loadManageableUser(req);
   const tempPassword = generatePassword();
   await setPassword(target.id, tempPassword, { mustChange: true });
   res.json({ tempPassword });
 });
 
-router.delete('/:id', requirePermission('team.manage'), (req, res) => {
-  const target = loadManageableUser(req);
-  deleteUser(target.id);
+router.delete('/:id', requirePermission('team.manage'), async (req, res) => {
+  const target = await loadManageableUser(req);
+  await deleteUser(target.id);
   res.status(204).end();
 });
 

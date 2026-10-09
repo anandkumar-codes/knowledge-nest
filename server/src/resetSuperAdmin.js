@@ -5,7 +5,7 @@
 import crypto from 'node:crypto';
 import { findSuperAdmin, setPassword } from './models/users.js';
 
-const admin = findSuperAdmin();
+const admin = await findSuperAdmin();
 if (!admin) {
   console.error('There is no super admin yet. Run `npm run seed` to create one.');
   process.exitCode = 1;

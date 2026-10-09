@@ -15,11 +15,12 @@ export function parseAmount(value, label, min = 0) {
   return n;
 }
 
-export const getFeePlans = () => ({ ...DEFAULT_FEES, ...getSetting(KEY, {}) });
+export const getFeePlans = async () => ({ ...DEFAULT_FEES, ...(await getSetting(KEY, {})) });
 
-export function setFeePlans(input, userId) {
+export async function setFeePlans(input, userId) {
+  const current = await getFeePlans();
   const next = {};
-  for (const k of Object.keys(DEFAULT_FEES)) next[k] = parseAmount(input?.[k] ?? getFeePlans()[k], k === 'day' ? 'Day pass fee' : 'Monthly fee');
-  setSetting(KEY, next, userId);
+  for (const k of Object.keys(DEFAULT_FEES)) next[k] = parseAmount(input?.[k] ?? current[k], k === 'day' ? 'Day pass fee' : 'Monthly fee');
+  await setSetting(KEY, next, userId);
   return next;
 }

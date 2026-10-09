@@ -1,12 +1,14 @@
-// Database backups: a consistent copy of the live database, taken without stopping the server.
+// Database backups: a complete copy of the database in a single file, taken without stopping the server.
 //   npm run backup          take one now
-// The server also takes one a day on its own (see startDailyBackups).
+// With a local database the server also takes one a day on its own (see startDailyBackups).
+// With Turso, Turso keeps its own restore points; `npm run backup` on your PC downloads a full copy as a file.
 // Point BACKUP_DIR at another drive or a synced folder (OneDrive, Google Drive) so a disk failure
 // doesn't take the backups with it.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { db, dbFile } from './db.js';
+import { closeDb, db, isRemoteDb } from './db.js';
+import { copyDatabase, openDatabase } from './copyDatabase.js';
 import { today } from './utils/dates.js';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,8 +22,7 @@ const backups = () =>
     : [];
 
 // Writes data/backups/knowledge-nest-YYYY-MM-DD[-HHMMSS].db and removes the oldest beyond BACKUP_KEEP.
-export function createBackup({ force = false } = {}) {
-  if (dbFile === ':memory:') return null;
+export async function createBackup({ force = false } = {}) {
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
   const day = today();
   let file = path.join(BACKUP_DIR, `${PREFIX}${day}.db`);
@@ -30,16 +31,32 @@ export function createBackup({ force = false } = {}) {
     const time = new Date().toTimeString().slice(0, 8).replace(/:/g, '');
     file = path.join(BACKUP_DIR, `${PREFIX}${day}-${time}.db`);
   }
-  db.prepare('VACUUM INTO ?').run(file);
+  if (isRemoteDb) {
+    // Turso: copy every table into a new local file.
+    const source = openDatabase(process.env.TURSO_DATABASE_URL.trim());
+    const target = openDatabase(file);
+    try {
+      await copyDatabase(source, target);
+    } finally {
+      source.close();
+      target.close();
+    }
+  } else {
+    await db.prepare('VACUUM INTO ?').run(file);
+  }
   for (const old of backups().slice(0, -KEEP)) fs.rmSync(path.join(BACKUP_DIR, old));
   return file;
 }
 
-// Checks every hour and takes the day's backup once.
+// Local database: checks every hour and takes the day's backup once.
 export function startDailyBackups(log = console.log) {
-  const run = () => {
+  if (isRemoteDb) {
+    log('Database is on Turso: Turso keeps restore points; run `npm run backup` on your PC for a file copy.');
+    return;
+  }
+  const run = async () => {
     try {
-      const file = createBackup();
+      const file = await createBackup();
       if (file) log(`Backed up the database to ${file}`);
     } catch (err) {
       console.error('Database backup failed:', err.message);
@@ -51,10 +68,12 @@ export function startDailyBackups(log = console.log) {
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const file = createBackup({ force: true });
-    console.log(file ? `Backup written to ${file}` : 'Nothing to back up (in-memory database).');
+    const file = await createBackup({ force: true });
+    console.log(`Backup written to ${file}`);
   } catch (err) {
     console.error(`Backup failed: ${err.message}`);
     process.exitCode = 1;
+  } finally {
+    closeDb();
   }
 }

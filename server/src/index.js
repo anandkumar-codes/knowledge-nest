@@ -20,11 +20,11 @@ try {
   console.error(`APP_TIMEZONE "${TIME_ZONE}" is not a valid time zone. Use a name like Asia/Kolkata.`);
   process.exit(1);
 }
-const createdSeats = ensureSeats();
+const createdSeats = await ensureSeats();
 if (createdSeats) console.log(`Created ${createdSeats} seats.`);
-const backfilled = backfillMembersFromBookings();
+const backfilled = await backfillMembersFromBookings();
 if (backfilled) console.log(`Created ${backfilled} member records from existing bookings.`);
-if (!findSuperAdmin()) {
+if (!(await findSuperAdmin())) {
   console.warn('No super admin yet. Run `npm run seed` to create one.');
 }
 

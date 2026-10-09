@@ -1,6 +1,7 @@
 import { db, now, transaction } from '../db.js';
 import { HALL } from '../config/seating.js';
 import { memberCode } from './members.js';
+import { localDateSql } from '../utils/dates.js';
 
 const toSeat = (row) =>
   row && {
@@ -37,29 +38,29 @@ const toAllocation = (row) =>
   };
 
 // Creates the hall's seats the first time the server or seed script runs.
-export function ensureSeats() {
-  const { n } = db.prepare('SELECT COUNT(*) AS n FROM seats').get();
+export async function ensureSeats() {
+  const { n } = await db.prepare('SELECT COUNT(*) AS n FROM seats').get();
   if (n > 0) return 0;
   const insert = db.prepare(
     'INSERT INTO seats (label, row_label, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
   );
   const ts = now();
-  transaction(() => {
+  await transaction(async () => {
     for (const row of HALL.rows) {
-      for (let p = 1; p <= HALL.seatsPerRow; p++) insert.run(`${row}${p}`, row, p, ts, ts);
+      for (let p = 1; p <= HALL.seatsPerRow; p++) await insert.run(`${row}${p}`, row, p, ts, ts);
     }
   });
   return HALL.rows.length * HALL.seatsPerRow;
 }
 
-export const listSeats = () =>
-  db.prepare('SELECT * FROM seats ORDER BY row_label, position').all().map(toSeat);
+export const listSeats = async () =>
+  (await db.prepare('SELECT * FROM seats ORDER BY row_label, position').all()).map(toSeat);
 
-export const findSeat = (id) => toSeat(db.prepare('SELECT * FROM seats WHERE id = ?').get(id));
+export const findSeat = async (id) => toSeat(await db.prepare('SELECT * FROM seats WHERE id = ?').get(id));
 
-export function updateSeat(id, { status, notes }) {
-  const seat = findSeat(id);
-  db.prepare('UPDATE seats SET status = ?, notes = ?, updated_at = ? WHERE id = ?').run(
+export async function updateSeat(id, { status, notes }) {
+  const seat = await findSeat(id);
+  await db.prepare('UPDATE seats SET status = ?, notes = ?, updated_at = ? WHERE id = ?').run(
     status ?? seat.status, notes ?? seat.notes, now(), id
   );
   return findSeat(id);
@@ -76,36 +77,36 @@ const SELECT_ALLOC = `
   LEFT JOIN users u ON u.id = a.created_by`;
 
 // Bookings still in effect or starting later (not released, not yet ended).
-export const listOpenAllocations = (today, seatId = null) =>
-  db
+export const listOpenAllocations = async (today, seatId = null) =>
+  (await db
     .prepare(
       `${SELECT_ALLOC} WHERE a.released_at IS NULL AND a.end_date >= ? AND (? IS NULL OR a.seat_id = ?)
        ORDER BY a.start_date, a.id`
     )
-    .all(today, seatId, seatId)
+    .all(today, seatId, seatId))
     .map(toAllocation);
 
 // Finished bookings (ended or released), most recently finished first.
-export const listPastAllocations = (today, limit = 500) =>
-  db
+export const listPastAllocations = async (today, limit = 500) =>
+  (await db
     .prepare(
       `${SELECT_ALLOC} WHERE a.released_at IS NOT NULL OR a.end_date < ?
-       ORDER BY COALESCE(local_date(a.released_at), a.end_date) DESC, a.id DESC
+       ORDER BY COALESCE(${localDateSql('a.released_at')}, a.end_date) DESC, a.id DESC
        LIMIT ?`
     )
-    .all(today, limit)
+    .all(today, limit))
     .map(toAllocation);
 
 // Every booking a member has ever had, newest first.
-export const listMemberAllocations = (memberId) =>
-  db.prepare(`${SELECT_ALLOC} WHERE a.member_id = ? ORDER BY a.start_date DESC, a.id DESC`).all(memberId).map(toAllocation);
+export const listMemberAllocations = async (memberId) =>
+  (await db.prepare(`${SELECT_ALLOC} WHERE a.member_id = ? ORDER BY a.start_date DESC, a.id DESC`).all(memberId)).map(toAllocation);
 
-export const findAllocation = (id) => toAllocation(db.prepare(`${SELECT_ALLOC} WHERE a.id = ?`).get(id));
+export const findAllocation = async (id) => toAllocation(await db.prepare(`${SELECT_ALLOC} WHERE a.id = ?`).get(id));
 
 // Bookings on the same seat whose dates overlap and whose shifts clash
 // (full day clashes with everything; morning/evening only with themselves).
-export const findConflicts = ({ seatId, shift, startDate, endDate, excludeId = 0 }) =>
-  db
+export const findConflicts = async ({ seatId, shift, startDate, endDate, excludeId = 0 }) =>
+  (await db
     .prepare(
       `${SELECT_ALLOC}
        WHERE a.seat_id = ? AND a.released_at IS NULL AND a.id != ?
@@ -113,12 +114,12 @@ export const findConflicts = ({ seatId, shift, startDate, endDate, excludeId = 0
          AND (a.shift = 'full' OR ? = 'full' OR a.shift = ?)
        ORDER BY a.start_date`
     )
-    .all(seatId, excludeId, endDate, startDate, shift, shift)
+    .all(seatId, excludeId, endDate, startDate, shift, shift))
     .map(toAllocation);
 
 // `member` is a member row, or { id: null, name, phone } for a walk-in day-pass guest.
-export function createAllocation({ seatId, member, shift, startDate, endDate, notes, fee = 0, kind = 'plan', createdBy }) {
-  const { lastInsertRowid } = db
+export async function createAllocation({ seatId, member, shift, startDate, endDate, notes, fee = 0, kind = 'plan', createdBy }) {
+  const { lastInsertRowid } = await db
     .prepare(
       `INSERT INTO seat_allocations
          (seat_id, member_id, member_name, member_phone, shift, start_date, end_date, notes, fee, kind, created_by, created_at)
@@ -129,25 +130,25 @@ export function createAllocation({ seatId, member, shift, startDate, endDate, no
 }
 
 // Change the end date; `addFee` is charged on top of the existing fee (e.g. for an extra month).
-export function setAllocationEndDate(id, endDate, addFee = 0) {
-  db.prepare('UPDATE seat_allocations SET end_date = ?, fee = fee + ? WHERE id = ?').run(endDate, addFee, id);
+export async function setAllocationEndDate(id, endDate, addFee = 0) {
+  await db.prepare('UPDATE seat_allocations SET end_date = ?, fee = fee + ? WHERE id = ?').run(endDate, addFee, id);
   return findAllocation(id);
 }
 
-export function setAllocationFee(id, fee) {
-  db.prepare('UPDATE seat_allocations SET fee = ? WHERE id = ?').run(fee, id);
+export async function setAllocationFee(id, fee) {
+  await db.prepare('UPDATE seat_allocations SET fee = ? WHERE id = ?').run(fee, id);
   return findAllocation(id);
 }
 
 // Every booking (current or past) that still has money owed, oldest first.
-export const listDueAllocations = () =>
-  db
+export const listDueAllocations = async () =>
+  (await db
     .prepare(`SELECT * FROM (${SELECT_ALLOC}) WHERE fee > paid ORDER BY start_date, id`)
-    .all()
+    .all())
     .map(toAllocation);
 
-export function releaseAllocation(id, userId) {
-  db.prepare('UPDATE seat_allocations SET released_at = ?, released_by = ? WHERE id = ?').run(now(), userId, id);
+export async function releaseAllocation(id, userId) {
+  await db.prepare('UPDATE seat_allocations SET released_at = ?, released_by = ? WHERE id = ?').run(now(), userId, id);
 }
 
 /**
@@ -157,16 +158,16 @@ export function releaseAllocation(id, userId) {
  * Returns the booking that now holds the member's seat.
  */
 export function moveAllocation(allocation, newSeatId, today, userId) {
-  return transaction(() => {
+  return transaction(async () => {
     if (allocation.startDate >= today) {
-      db.prepare('UPDATE seat_allocations SET seat_id = ? WHERE id = ?').run(newSeatId, allocation.id);
+      await db.prepare('UPDATE seat_allocations SET seat_id = ? WHERE id = ?').run(newSeatId, allocation.id);
       return findAllocation(allocation.id);
     }
     const yesterday = new Date(`${today}T00:00:00Z`);
     yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-    db.prepare('UPDATE seat_allocations SET end_date = ? WHERE id = ?').run(yesterday.toISOString().slice(0, 10), allocation.id);
-    const row = db.prepare('SELECT * FROM seat_allocations WHERE id = ?').get(allocation.id);
-    const { lastInsertRowid } = db
+    await db.prepare('UPDATE seat_allocations SET end_date = ? WHERE id = ?').run(yesterday.toISOString().slice(0, 10), allocation.id);
+    const row = await db.prepare('SELECT * FROM seat_allocations WHERE id = ?').get(allocation.id);
+    const { lastInsertRowid } = await db
       .prepare(
         `INSERT INTO seat_allocations
            (seat_id, member_id, member_name, member_phone, shift, start_date, end_date, notes, fee, kind, moved_from, created_by, created_at)

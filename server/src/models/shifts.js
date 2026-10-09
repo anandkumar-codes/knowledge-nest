@@ -16,8 +16,8 @@ export function formatTime(hhmm) {
 const storedTimes = () => getSetting(KEY, DEFAULT_SHIFT_TIMES);
 
 // The three shifts with their current labels and timings, in display order.
-export function getShifts() {
-  const t = storedTimes();
+export async function getShifts() {
+  const t = await storedTimes();
   const full = { ...t.full, start: t.morning.start, end: t.evening.end };
   return [
     ['morning', t.morning],
@@ -32,13 +32,13 @@ export function getShifts() {
   }));
 }
 
-export function setShiftTimes(input, userId) {
+export async function setShiftTimes(input, userId) {
   const label = (v, fallback) => {
     const s = String(v ?? fallback).trim();
     if (!s || s.length > 24) throw new HttpError(400, 'Shift names must be 1–24 characters.');
     return s;
   };
-  const current = storedTimes();
+  const current = await storedTimes();
   const next = {
     morning: {
       label: label(input?.morning?.label, current.morning.label),
@@ -63,6 +63,6 @@ export function setShiftTimes(input, userId) {
     throw new HttpError(400, `${next.morning.label} must end by the time ${next.evening.label} starts.`);
   }
 
-  setSetting(KEY, next, userId);
+  await setSetting(KEY, next, userId);
   return getShifts();
 }

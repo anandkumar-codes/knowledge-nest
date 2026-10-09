@@ -1,6 +1,7 @@
 import { db } from '../db.js';
 import { netCollected } from './payments.js';
 import { listDueAllocations } from './seats.js';
+import { localDate } from '../utils/dates.js';
 
 const NET = "SUM(CASE kind WHEN 'refund' THEN -amount ELSE amount END)";
 
@@ -21,20 +22,22 @@ function eachDay(from, to) {
 }
 
 // Bookings that overlap [from, to]. A booking counts on its release day, not after.
-function overlapping(from, to) {
-  return db
+// released_on is the reading room's calendar day of the (UTC) release time.
+async function overlapping(from, to) {
+  const rows = await db
     .prepare(
-      `SELECT id, seat_id, member_id, shift, start_date, end_date, local_date(released_at) AS released_on
+      `SELECT id, seat_id, member_id, shift, start_date, end_date, released_at
        FROM seat_allocations WHERE start_date <= ? AND end_date >= ?`
     )
     .all(to, from);
+  return rows.map((a) => ({ ...a, released_on: localDate(a.released_at) }));
 }
 
 const activeOn = (a, d) => a.start_date <= d && a.end_date >= d && (!a.released_on || a.released_on >= d);
 
 // Per-day count of seats taken in each shift, plus shift-days used per seat.
-function occupancy(from, to) {
-  const allocs = overlapping(from, to);
+async function occupancy(from, to) {
+  const allocs = await overlapping(from, to);
   const perSeat = {};
   const days = eachDay(from, to).map((date) => {
     let morning = 0;
@@ -56,7 +59,7 @@ const average = (list) => (list.length ? list.reduce((t, x) => t + x, 0) / list.
 const occupancyRate = (days, capacity) =>
   capacity ? average(days.map((d) => (d.morning + d.evening) / (capacity * 2))) : 0;
 
-const count = (sql, ...args) => db.prepare(sql).get(...args).n;
+const count = async (sql, ...args) => (await db.prepare(sql).get(...args)).n;
 const bookingsStarting = (from, to) =>
   count('SELECT COUNT(*) AS n FROM seat_allocations WHERE start_date BETWEEN ? AND ?', from, to);
 const membersJoining = (from, to) => count('SELECT COUNT(*) AS n FROM members WHERE joined_on BETWEEN ? AND ?', from, to);
@@ -66,21 +69,22 @@ const membersJoining = (from, to) => count('SELECT COUNT(*) AS n FROM members WH
  * same member within 7 days. Plans that ended under 7 days ago and haven't been renewed yet are left out
  * (they may still renew). Extensions move the end date, so extended plans never count as "ended".
  */
-function renewals(from, to, today) {
-  const ended = db
+async function renewals(from, to, today) {
+  const candidates = await db
     .prepare(
-      `SELECT id, member_id, end_date FROM seat_allocations
-       WHERE end_date BETWEEN ? AND ? AND end_date < ? AND member_id IS NOT NULL AND kind = 'plan'
-         AND (released_at IS NULL OR local_date(released_at) >= end_date)`
+      `SELECT id, member_id, end_date, released_at FROM seat_allocations
+       WHERE end_date BETWEEN ? AND ? AND end_date < ? AND member_id IS NOT NULL AND kind = 'plan'`
     )
     .all(from, to, today);
+  // Released early (before the end date, in the reading room's time zone) means the plan didn't run to its end.
+  const ended = candidates.filter((a) => !a.released_at || localDate(a.released_at) >= a.end_date);
   const next = db.prepare(
     "SELECT 1 FROM seat_allocations WHERE member_id = ? AND id != ? AND kind = 'plan' AND start_date > ? AND start_date <= ? LIMIT 1"
   );
   let renewed = 0;
   let counted = 0;
   for (const a of ended) {
-    const didRenew = !!next.get(a.member_id, a.id, a.end_date, addDays(a.end_date, 7));
+    const didRenew = !!(await next.get(a.member_id, a.id, a.end_date, addDays(a.end_date, 7)));
     if (didRenew) renewed++;
     if (didRenew || addDays(a.end_date, 7) < today) counted++;
   }
@@ -88,11 +92,11 @@ function renewals(from, to, today) {
 }
 
 // Day passes used in the period and what they brought in (net of refunds).
-function dayPasses(from, to) {
-  const { n } = db
+async function dayPasses(from, to) {
+  const { n } = await db
     .prepare("SELECT COUNT(*) AS n FROM seat_allocations WHERE kind = 'day' AND start_date BETWEEN ? AND ?")
     .get(from, to);
-  const { net } = db
+  const { net } = await db
     .prepare(
       `SELECT COALESCE(SUM(CASE p.kind WHEN 'refund' THEN -p.amount ELSE p.amount END), 0) AS net
        FROM payments p JOIN seat_allocations a ON a.id = p.allocation_id
@@ -102,41 +106,41 @@ function dayPasses(from, to) {
   return { value: n, revenue: net };
 }
 
-export function buildReport(from, to, today) {
+export async function buildReport(from, to, today) {
   const length = daysBetween(from, to) + 1;
   const prevTo = addDays(from, -1);
   const prevFrom = addDays(from, -length);
 
-  const seats = db.prepare('SELECT id, label, row_label, position, status FROM seats ORDER BY row_label, position').all();
+  const seats = await db.prepare('SELECT id, label, row_label, position, status FROM seats ORDER BY row_label, position').all();
   const capacity = seats.length;
 
   // Revenue
-  const revenueRows = db
+  const revenueRows = await db
     .prepare(`SELECT paid_on AS date, ${NET} AS net FROM payments WHERE voided_at IS NULL AND paid_on BETWEEN ? AND ? GROUP BY paid_on`)
     .all(from, to);
   const revenueByDay = Object.fromEntries(revenueRows.map((r) => [r.date, r.net]));
   const byMethod = Object.fromEntries(
-    db
+    (await db
       .prepare(`SELECT method, ${NET} AS net FROM payments WHERE voided_at IS NULL AND paid_on BETWEEN ? AND ? GROUP BY method`)
-      .all(from, to)
+      .all(from, to))
       .map((r) => [r.method, r.net])
   );
 
   // Occupancy (current + previous period for the delta)
-  const occ = occupancy(from, to);
-  const prevOcc = occupancy(prevFrom, prevTo);
+  const occ = await occupancy(from, to);
+  const prevOcc = await occupancy(prevFrom, prevTo);
 
   const shiftMix = Object.fromEntries(
-    db
+    (await db
       .prepare(
         `SELECT CASE kind WHEN 'day' THEN 'day' ELSE shift END AS k, COUNT(*) AS n
          FROM seat_allocations WHERE start_date BETWEEN ? AND ? GROUP BY k`
       )
-      .all(from, to)
+      .all(from, to))
       .map((r) => [r.k, r.n])
   );
 
-  const dues = listDueAllocations();
+  const dues = await listDueAllocations();
 
   return {
     from,
@@ -145,12 +149,12 @@ export function buildReport(from, to, today) {
     capacity,
     days: occ.days.map((d) => ({ ...d, revenue: revenueByDay[d.date] ?? 0 })),
     kpis: {
-      revenue: { value: netCollected(from, to), previous: netCollected(prevFrom, prevTo) },
+      revenue: { value: await netCollected(from, to), previous: await netCollected(prevFrom, prevTo) },
       occupancy: { value: occupancyRate(occ.days, capacity), previous: occupancyRate(prevOcc.days, capacity) },
-      newBookings: { value: bookingsStarting(from, to), previous: bookingsStarting(prevFrom, prevTo) },
-      newMembers: { value: membersJoining(from, to), previous: membersJoining(prevFrom, prevTo) },
-      renewals: renewals(from, to, today),
-      dayPasses: dayPasses(from, to),
+      newBookings: { value: await bookingsStarting(from, to), previous: await bookingsStarting(prevFrom, prevTo) },
+      newMembers: { value: await membersJoining(from, to), previous: await membersJoining(prevFrom, prevTo) },
+      renewals: await renewals(from, to, today),
+      dayPasses: await dayPasses(from, to),
       outstanding: { value: dues.reduce((t, a) => t + a.balance, 0), count: dues.length },
     },
     byMethod: { cash: 0, upi: 0, card: 0, bank: 0, ...byMethod },

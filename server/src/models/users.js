@@ -49,15 +49,15 @@ export function checkChosenPassword(password, message = 'Use at least 8 characte
 // Unix seconds, the unit JWT `iat` uses.
 export const nowSeconds = () => Math.floor(Date.now() / 1000);
 
-export const findUser = (id) => toUser(db.prepare(`${SELECT} WHERE u.id = ?`).get(id));
+export const findUser = async (id) => toUser(await db.prepare(`${SELECT} WHERE u.id = ?`).get(id));
 
-export const findUserByEmail = (email) =>
-  toUser(db.prepare(`${SELECT} WHERE u.email = ?`).get(String(email).trim().toLowerCase()));
+export const findUserByEmail = async (email) =>
+  toUser(await db.prepare(`${SELECT} WHERE u.email = ?`).get(String(email).trim().toLowerCase()));
 
-export const findSuperAdmin = () => toUser(db.prepare(`${SELECT} WHERE u.is_super_admin = 1`).get());
+export const findSuperAdmin = async () => toUser(await db.prepare(`${SELECT} WHERE u.is_super_admin = 1`).get());
 
-export const listUsers = () =>
-  db.prepare(`${SELECT} ORDER BY u.is_super_admin DESC, u.id`).all().map(toUser);
+export const listUsers = async () =>
+  (await db.prepare(`${SELECT} ORDER BY u.is_super_admin DESC, u.id`).all()).map(toUser);
 
 export async function createUser({
   name, email, password, roleId = null, isSuperAdmin = false, createdBy = null, mustChangePassword = false,
@@ -66,7 +66,7 @@ export async function createUser({
   if (!EMAIL_RE.test(cleanEmail)) throw new HttpError(400, 'Invalid email address.');
   checkPassword(password);
   const ts = now();
-  const { lastInsertRowid } = db
+  const { lastInsertRowid } = await db
     .prepare(
       `INSERT INTO users (name, email, password_hash, is_super_admin, role_id, created_by, must_change_password, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -78,15 +78,15 @@ export async function createUser({
   return findUser(Number(lastInsertRowid));
 }
 
-export function updateUser(id, { name, roleId, status }) {
-  const u = findUser(id);
+export async function updateUser(id, { name, roleId, status }) {
+  const u = await findUser(id);
   const next = {
     name: name === undefined ? u.name : cleanName(name),
     roleId: roleId === undefined ? (u.role?.id ?? null) : roleId,
     status: status === undefined ? u.status : status,
   };
   if (!['active', 'disabled'].includes(next.status)) throw new HttpError(400, 'Invalid status.');
-  db.prepare('UPDATE users SET name = ?, role_id = ?, status = ?, updated_at = ? WHERE id = ?').run(
+  await db.prepare('UPDATE users SET name = ?, role_id = ?, status = ?, updated_at = ? WHERE id = ?').run(
     next.name, next.roleId, next.status, now(), id
   );
   return findUser(id);
@@ -96,7 +96,7 @@ export function updateUser(id, { name, roleId, status }) {
 export async function setPassword(id, password, { mustChange }) {
   checkPassword(password);
   // Recording the change time signs out every session that was opened with the old password.
-  db.prepare(
+  await db.prepare(
     'UPDATE users SET password_hash = ?, must_change_password = ?, password_changed_at = ?, updated_at = ? WHERE id = ?'
   ).run(await bcrypt.hash(password, 12), mustChange ? 1 : 0, nowSeconds(), now(), id);
 }

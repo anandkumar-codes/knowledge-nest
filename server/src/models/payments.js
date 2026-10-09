@@ -54,26 +54,26 @@ const SELECT = `
   LEFT JOIN users r ON r.id = p.received_by
   LEFT JOIN users v ON v.id = p.voided_by`;
 
-export const findPayment = (id) => toPayment(db.prepare(`${SELECT} WHERE p.id = ?`).get(id));
+export const findPayment = async (id) => toPayment(await db.prepare(`${SELECT} WHERE p.id = ?`).get(id));
 
 // Payments whose paid_on falls within [from, to], newest first. Voided ones are included (and flagged).
-export const listPaymentsBetween = (from, to) =>
-  db.prepare(`${SELECT} WHERE p.paid_on BETWEEN ? AND ? ORDER BY p.paid_on DESC, p.id DESC`).all(from, to).map(toPayment);
+export const listPaymentsBetween = async (from, to) =>
+  (await db.prepare(`${SELECT} WHERE p.paid_on BETWEEN ? AND ? ORDER BY p.paid_on DESC, p.id DESC`).all(from, to)).map(toPayment);
 
-export const listMemberPayments = (memberId) =>
-  db.prepare(`${SELECT} WHERE p.member_id = ? ORDER BY p.paid_on DESC, p.id DESC`).all(memberId).map(toPayment);
+export const listMemberPayments = async (memberId) =>
+  (await db.prepare(`${SELECT} WHERE p.member_id = ? ORDER BY p.paid_on DESC, p.id DESC`).all(memberId)).map(toPayment);
 
 // Net money in (payments minus refunds, ignoring voided) for a date range.
-export const netCollected = (from, to) =>
-  db
+export const netCollected = async (from, to) =>
+  (await db
     .prepare(
       `SELECT COALESCE(SUM(CASE kind WHEN 'refund' THEN -amount ELSE amount END), 0) AS net
        FROM payments WHERE voided_at IS NULL AND paid_on BETWEEN ? AND ?`
     )
-    .get(from, to).net;
+    .get(from, to)).net;
 
-export function createPayment({ allocation, kind = 'payment', amount, method, reference = '', paidOn, notes = '', receivedBy }) {
-  const { lastInsertRowid } = db
+export async function createPayment({ allocation, kind = 'payment', amount, method, reference = '', paidOn, notes = '', receivedBy }) {
+  const { lastInsertRowid } = await db
     .prepare(
       `INSERT INTO payments (allocation_id, member_id, kind, amount, method, reference, paid_on, notes, received_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -82,7 +82,7 @@ export function createPayment({ allocation, kind = 'payment', amount, method, re
   return findPayment(Number(lastInsertRowid));
 }
 
-export function voidPayment(id, reason, userId) {
-  db.prepare('UPDATE payments SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?').run(now(), userId, reason, id);
+export async function voidPayment(id, reason, userId) {
+  await db.prepare('UPDATE payments SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?').run(now(), userId, reason, id);
   return findPayment(id);
 }

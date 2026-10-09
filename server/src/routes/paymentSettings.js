@@ -9,12 +9,12 @@ router.use(authenticate);
 router.use(express.json({ limit: '1mb' }));
 
 // Any staff member can read these (they show the QR when collecting at the desk).
-router.get('/', (_req, res) => {
-  res.json({ settings: getPaymentSettings() });
+router.get('/', async (_req, res) => {
+  res.json({ settings: await getPaymentSettings() });
 });
 
-router.put('/', requireSuperAdmin, (req, res) => {
-  res.json({ settings: setPaymentSettings(req.body ?? {}, req.user.id) });
+router.put('/', requireSuperAdmin, async (req, res) => {
+  res.json({ settings: await setPaymentSettings(req.body ?? {}, req.user.id) });
 });
 
 export default router;

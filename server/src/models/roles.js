@@ -34,17 +34,17 @@ const SELECT = `
   SELECT r.*, (SELECT COUNT(*) FROM users u WHERE u.role_id = r.id) AS member_count
   FROM roles r`;
 
-export const listRoles = () => db.prepare(`${SELECT} ORDER BY r.id`).all().map(toRole);
+export const listRoles = async () => (await db.prepare(`${SELECT} ORDER BY r.id`).all()).map(toRole);
 
-export const findRole = (id) => toRole(db.prepare(`${SELECT} WHERE r.id = ?`).get(id));
+export const findRole = async (id) => toRole(await db.prepare(`${SELECT} WHERE r.id = ?`).get(id));
 
-export const roleExists = (name) =>
-  !!db.prepare('SELECT 1 FROM roles WHERE name_key = ?').get(String(name).trim().toLowerCase());
+export const roleExists = async (name) =>
+  !!(await db.prepare('SELECT 1 FROM roles WHERE name_key = ?').get(String(name).trim().toLowerCase()));
 
-export function createRole(input, createdBy = null) {
+export async function createRole(input, createdBy = null) {
   const r = clean(input, { description: '', permissions: [] });
   const ts = now();
-  const { lastInsertRowid } = db
+  const { lastInsertRowid } = await db
     .prepare(
       `INSERT INTO roles (name, name_key, description, permissions, created_by, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -53,10 +53,10 @@ export function createRole(input, createdBy = null) {
   return findRole(Number(lastInsertRowid));
 }
 
-export function updateRole(id, input) {
-  const existing = findRole(id);
+export async function updateRole(id, input) {
+  const existing = await findRole(id);
   const r = clean(input, existing);
-  db.prepare(
+  await db.prepare(
     `UPDATE roles SET name = ?, name_key = ?, description = ?, permissions = ?, updated_at = ? WHERE id = ?`
   ).run(r.name, r.name.toLowerCase(), r.description, JSON.stringify(r.permissions), now(), id);
   return findRole(id);

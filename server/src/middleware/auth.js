@@ -4,7 +4,7 @@ import { HttpError, parseId, permissionsOf } from '../utils/http.js';
 
 const PASSWORD_CHANGE_ROUTES = new Set(['/api/auth/me', '/api/auth/change-password']);
 
-export function authenticate(req, _res, next) {
+export async function authenticate(req, _res, next) {
   const header = req.headers.authorization ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) throw new HttpError(401, 'Please sign in.');
@@ -19,7 +19,7 @@ export function authenticate(req, _res, next) {
   // Re-read the user each request so role changes and disabling take effect immediately.
   if (payload.kind === 'member') throw new HttpError(401, 'Please sign in.'); // member portal token
   const id = parseId(payload.sub);
-  const user = id && findUser(id);
+  const user = id && (await findUser(id));
   if (!user || user.status !== 'active') {
     throw new HttpError(401, 'Your account is no longer active.');
   }

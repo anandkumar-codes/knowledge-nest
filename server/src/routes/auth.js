@@ -20,7 +20,7 @@ router.post('/login', loginLimiters, async (req, res) => {
     throw new HttpError(400, 'Email and password are required.');
   }
 
-  const user = findUserByEmail(email);
+  const user = await findUserByEmail(email);
   // Same message (and the same time taken) for unknown email and wrong password so accounts can't be enumerated.
   if (!(await verifyPassword(user, password))) {
     throw new HttpError(401, 'Invalid email or password.');
@@ -29,8 +29,8 @@ router.post('/login', loginLimiters, async (req, res) => {
     throw new HttpError(403, 'This account has been disabled. Contact your administrator.');
   }
 
-  touchLastLogin(user.id);
-  res.json({ token: signToken(user.id, remember), user: toUserDTO(findUser(user.id)) });
+  await touchLastLogin(user.id);
+  res.json({ token: signToken(user.id, remember), user: toUserDTO(await findUser(user.id)) });
 });
 
 router.get('/me', authenticate, (req, res) => {
@@ -49,7 +49,7 @@ router.post('/change-password', authenticate, async (req, res) => {
   await setPassword(req.user.id, newPassword, { mustChange: false });
   // Other sessions are now signed out; this device gets a fresh token with the same lifetime as before.
   const remember = (req.auth.exp - req.auth.iat) > 24 * 60 * 60;
-  res.json({ token: signToken(req.user.id, remember), user: toUserDTO(findUser(req.user.id)) });
+  res.json({ token: signToken(req.user.id, remember), user: toUserDTO(await findUser(req.user.id)) });
 });
 
 export default router;

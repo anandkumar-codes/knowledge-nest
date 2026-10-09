@@ -8,16 +8,16 @@ import { createUser, findSuperAdmin } from './models/users.js';
 
 export async function seed({ name, email, password }, log = console.log) {
   for (const def of DEFAULT_ROLES) {
-    if (!roleExists(def.name)) {
-      createRole(def);
+    if (!(await roleExists(def.name))) {
+      await createRole(def);
       log(`  + role "${def.name}"`);
     }
   }
 
-  const seats = ensureSeats();
+  const seats = await ensureSeats();
   if (seats) log(`  + ${seats} seats`);
 
-  const existing = findSuperAdmin();
+  const existing = await findSuperAdmin();
   if (existing) {
     log(`  = super admin already exists (${existing.email})`);
     return existing;

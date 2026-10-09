@@ -9,15 +9,15 @@ const MAX_IMAGE_CHARS = 900_000; // ~650 KB of image data
 
 const DEFAULTS = { vpa: '', payee: '', qrMode: 'generated', qrImage: '', autoConfirm: false };
 
-export const getPaymentSettings = () => ({ ...DEFAULTS, ...getSetting(KEY, {}) });
+export const getPaymentSettings = async () => ({ ...DEFAULTS, ...(await getSetting(KEY, {})) });
 
 // Members and staff can take UPI payments when there's a UPI ID or an uploaded QR to show.
-export function onlinePaymentsReady(s = getPaymentSettings()) {
+export function onlinePaymentsReady(s) {
   return !!s.vpa || (s.qrMode === 'uploaded' && !!s.qrImage);
 }
 
-export function setPaymentSettings(input, userId) {
-  const current = getPaymentSettings();
+export async function setPaymentSettings(input, userId) {
+  const current = await getPaymentSettings();
   const pick = (k) => (input?.[k] === undefined ? current[k] : input[k]);
 
   const next = {
@@ -40,13 +40,13 @@ export function setPaymentSettings(input, userId) {
     throw new HttpError(400, 'Add a UPI ID or QR code before turning on automatic confirmation.');
   }
 
-  setSetting(KEY, next, userId);
+  await setSetting(KEY, next, userId);
   return getPaymentSettings();
 }
 
 // What members see: no need to send the image unless it's the one in use.
-export function publicPaymentSettings() {
-  const s = getPaymentSettings();
+export async function publicPaymentSettings() {
+  const s = await getPaymentSettings();
   return {
     vpa: s.vpa,
     payee: s.payee,
