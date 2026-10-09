@@ -21,6 +21,7 @@ services:
         sync: false
       - key: APP_TIMEZONE
         value: Asia/Kolkata
-      # Render's proxy adds the visitor's real address; trust exactly that one hop.
+      # Render forwards requests through internal proxies on private addresses (10.x.x.x). Trusting private
+      # ranges makes the app use the first public address in the chain: the visitor's real one.
       - key: TRUST_PROXY
-        value: "1"
+        value: "loopback, linklocal, uniquelocal"
